@@ -20,7 +20,7 @@ batch_size = int(32 * (32 / ps) ** 2)  # Calculated batch size based on pixel si
 mse = nn.MSELoss()  # Mean Squared Error loss function
 
 # Data directory and channel name
-data_dir = "data/raw/imagenet-a/"  # Directory for the ImageNet-A dataset
+data_dir = "data/raw/small_imagenet-a/"  # Directory for the ImageNet-A dataset
 JSSC_channel_name = "Channel"  # Name of the channel for JSSC
 
 # Dataset size configuration
@@ -343,9 +343,9 @@ class Model(nn.Module):
         # Create the channel
         self.channel = Channel(snr=SNR, cplx=True)
         # Create the decoders
-        self.decoders = nn.ModuleList()
+        self.decoders = []
         for i in range(stages_count):
-            self.decoders.append(Decoder(input_shape=(dec_chs * (i + 1), None, None), img_chs=img_chs))
+            self.decoders.append(Decoder(input_shape=(dec_chs * (i + 1), None, None), img_chs=img_chs).to(DEVICE))
 
     def forward(self, x):
         """
@@ -357,11 +357,18 @@ class Model(nn.Module):
         power_out = self.powernorm(encoder_out)
         channel_out = self.channel(power_out)
         outputs = []
+        losses = []
         for i, decoder in enumerate(self.decoders):
             # Select relevant features for each decoder
             decoder_input = channel_out[:, :dec_chs * (i + 1), :, :]
-            outputs.append(decoder(decoder_input))
-        return outputs
+            output = decoder(decoder_input)
+            outputs.append(output)
+            # Calculate the loss
+            loss = mse(x, output)  # Compute MSE loss against the original input
+            losses.append(loss)
+
+        return outputs, losses
+    
 # Define SNR values and target PSNR goals for performance measurement
 known_SNRs  = [1, 4, 7, 13, 19]
 test_SNRs   = [1, 4, 7, 10, 13, 16, 19, 22, 25]
@@ -433,19 +440,20 @@ def train(model, train_loader, optimizer, epoch):
     for data in train_loader:
         inputs = data.to(DEVICE)
         optimizer.zero_grad()  # Zero out any existing gradients
-        outputs = model(inputs)  # Get model outputs
+        outputs, losses = model(inputs)  # Get model outputs
         loss, loss_list = loss_function(outputs, inputs)  # Calculate loss
         if first == True:
             total_loss_epoch = loss_list
         if first == False:
-            total_loss_epoch = np.vstack((total_loss_epoch, loss_list))            
+            total_loss_epoch = np.vstack((total_loss_epoch, loss_list))
+        loss = sum(losses)/len(losses)            
         loss.backward()  # Backpropagation
         optimizer.step()  # Update model parameters
         total_loss += loss.item()
         first = False
     model.eval()  # Set the model to evaluation mode
     loss_per_channel = np.sum(total_loss_epoch, axis=0) / len(train_loader)
-    print(f"Epoch {epoch}, Loss: {total_loss / len(train_loader)}, Loss_per_channel: {loss_per_channel}")
+    print(f"Epoch {epoch}, Loss: {total_loss / len(train_loader)}, Loss_per_channel: {loss_list}")
     return loss_per_channel
 
 def get_psnr(outputs, input, psnr):
@@ -473,11 +481,15 @@ def evaluate_psnr(model, test_loader, psnr, device):
     model = model.to(device)
     with torch.no_grad():  # No gradient calculation for evaluation
         count = 0
+        total_loss = 0
         for data in test_loader:
             inputs = data.to(device)
-            outputs = model(inputs)
+            outputs, losses = model(inputs)
             psnr_val += get_psnr(outputs, inputs, psnr)
             count += 1
+            loss = sum(losses) / len(losses)
+            total_loss += loss.item()
+        print(f"Test Loss: {total_loss / len(test_loader)}")
         avg_psnr = psnr_val / count
     model.to(DEVICE)  # Move model back to the original device
     return avg_psnr
@@ -504,7 +516,7 @@ for epoch in range(epochs):
             min_psnr = avg_psnr.mean()
             torch.save(model.state_dict(), f"models/test_1/models/{JSSC_channel_name}_model_best.pth")
 
-        PSNR_plotter(test_SNRs, model, test_loader, epoch, stages_count)
+        # PSNR_plotter(test_SNRs, model, test_loader, epoch, stages_count)
         if epoch > 0:
             plot_loss(total_loss_per_channel, epoch, stages_count)
         print(f"Epoch {epoch}, PSNR channel_1: {avg_psnr[0]}, PSNR channel_2: {avg_psnr[1]}, PSNR channel_3: {avg_psnr[2]}, PSNR channel_4: {avg_psnr[3]}, PSNR channel_5: {avg_psnr[4]}")
