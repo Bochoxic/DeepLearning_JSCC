@@ -152,6 +152,11 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Data folders
+data/raw/imagenet-a
+data/raw/small_imagenet-a
+data/raw/imagenetv2
+
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
