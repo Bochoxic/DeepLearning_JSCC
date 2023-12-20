@@ -153,9 +153,12 @@ dmypy.json
 cython_debug/
 
 # Data folders
-data/raw/imagenet-a
-data/raw/small_imagenet-a
-data/raw/imagenetv2
+data/raw/imagenet-a/*
+!data/raw/imagenet-a/.gitkeep
+data/raw/small_imagenet-a/*
+!data/raw/small_imagenet-a/.gitkeep
+data/raw/imagenetv2/*
+!data/raw/imagenetv2/.gitkeep
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
